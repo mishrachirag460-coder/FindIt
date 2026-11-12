@@ -16,17 +16,27 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
 
   // Registration Form State
   const [regFullName, setRegFullName] = useState('')
+  const [regCourse, setRegCourse] = useState('')
+  const [regCustomCourse, setRegCustomCourse] = useState('')
+  const [regAcademicYear, setRegAcademicYear] = useState('')
+  const [regSection, setRegSection] = useState('')
   const [regEmail, setRegEmail] = useState('')
   const [regPassword, setRegPassword] = useState('')
   const [regConfirmPassword, setRegConfirmPassword] = useState('')
+  const [duplicateAccountEmail, setDuplicateAccountEmail] = useState(null)
 
   // Reset all form inputs and feedback messages
   const resetFormState = () => {
     setError(null)
     setSuccess(null)
+    setDuplicateAccountEmail(null)
     setSignInEmail('')
     setSignInPassword('')
     setRegFullName('')
+    setRegCourse('')
+    setRegCustomCourse('')
+    setRegAcademicYear('')
+    setRegSection('')
     setRegEmail('')
     setRegPassword('')
     setRegConfirmPassword('')
@@ -55,6 +65,19 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
     setActiveTab(newTab)
     setError(null)
     setSuccess(null)
+    setDuplicateAccountEmail(null)
+  }
+
+  // Switch to sign-in tab with prefilled email
+  const handleNavigateToSignIn = (emailToPrefill) => {
+    if (loading) return
+    setActiveTab('signin')
+    setError(null)
+    setSuccess(null)
+    setDuplicateAccountEmail(null)
+    if (emailToPrefill) {
+      setSignInEmail(emailToPrefill)
+    }
   }
 
   // Handle Sign In submission
@@ -87,9 +110,40 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
     e.preventDefault()
     setError(null)
     setSuccess(null)
+    setDuplicateAccountEmail(null)
 
-    if (!regFullName.trim() || !regEmail.trim() || !regPassword || !regConfirmPassword) {
-      setError('Please fill in all registration fields.')
+    if (!regFullName.trim()) {
+      setError('Please enter your full name.')
+      return
+    }
+
+    if (!regCourse) {
+      setError('Please select your course.')
+      return
+    }
+
+    if (regCourse === 'Other' && !regCustomCourse.trim()) {
+      setError('Please specify your course name.')
+      return
+    }
+
+    if (!regAcademicYear) {
+      setError('Please select your academic year (1st, 2nd, or 3rd).')
+      return
+    }
+
+    if (!regSection.trim()) {
+      setError('Please enter your class section.')
+      return
+    }
+
+    if (!regEmail.trim()) {
+      setError('Please enter your college email.')
+      return
+    }
+
+    if (!regPassword) {
+      setError('Please enter a password.')
       return
     }
 
@@ -103,15 +157,37 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
       return
     }
 
+    const effectiveCourse = regCourse === 'Other' ? regCustomCourse.trim() : regCourse
+    const normalizedEmail = regEmail.trim()
+
     try {
       setLoading(true)
-      const data = await signUpStudent(regFullName, regEmail, regPassword)
+      const data = await signUpStudent(regFullName, normalizedEmail, regPassword, {
+        course: effectiveCourse,
+        academic_year: regAcademicYear,
+        section: regSection.trim().toUpperCase(),
+      })
+
+      // Supabase Duplicate Account Detection (Email Confirmations ON):
+      // When email confirmations are enabled, Supabase does not throw an error on duplicate signup
+      // to avoid enumeration attacks. Instead, data.user is returned with identities = [].
+      const isDuplicateUser = data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0
+      if (isDuplicateUser) {
+        setDuplicateAccountEmail(normalizedEmail)
+        setError('This account is already registered. Please sign in using your existing account.')
+        return
+      }
 
       // Reset registration inputs
       setRegFullName('')
+      setRegCourse('')
+      setRegCustomCourse('')
+      setRegAcademicYear('')
+      setRegSection('')
       setRegEmail('')
       setRegPassword('')
       setRegConfirmPassword('')
+      setDuplicateAccountEmail(null)
 
       // Handle both signup outcomes:
       // a. If signup returns an active session, student is already logged in
@@ -128,7 +204,20 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
         }, 3500)
       }
     } catch (err) {
-      setError(err.message || 'Failed to register account. Please try again.')
+      // Supabase Duplicate Account Detection (Email Confirmations OFF or API error):
+      const errMsg = err?.message?.toLowerCase() || ''
+      const isDuplicateError =
+        err?.code === 'user_already_exists' ||
+        errMsg.includes('already registered') ||
+        errMsg.includes('already exists') ||
+        errMsg.includes('user already exists')
+
+      if (isDuplicateError) {
+        setDuplicateAccountEmail(normalizedEmail)
+        setError('This account is already registered. Please sign in using your existing account.')
+      } else {
+        setError(err.message || 'Failed to register account. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -199,12 +288,28 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
 
         {/* Feedback Messages */}
         {error && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            {error}
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <div className="flex items-start gap-2.5">
+              <span className="text-base leading-none">⚠️</span>
+              <div className="flex-1">
+                <p className="font-medium">{error}</p>
+                {duplicateAccountEmail && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => handleNavigateToSignIn(duplicateAccountEmail)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-blue-800 transition"
+                    >
+                      Sign In with {duplicateAccountEmail} →
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
         {success && (
-          <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+          <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-3.5 text-sm font-medium text-green-700">
             {success}
           </div>
         )}
@@ -271,6 +376,86 @@ export default function AuthModal({ isOpen, onClose, defaultTab = 'signin' }) {
                 disabled={loading}
                 className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:bg-slate-50 disabled:text-slate-500"
               />
+            </div>
+
+            {/* Course Dropdown */}
+            <div>
+              <label htmlFor="reg-course" className="mb-1 block text-sm font-medium text-slate-700">
+                Course
+              </label>
+              <select
+                id="reg-course"
+                value={regCourse}
+                onChange={(e) => setRegCourse(e.target.value)}
+                required
+                disabled={loading}
+                className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm bg-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:bg-slate-50 disabled:text-slate-500"
+              >
+                <option value="" disabled>Select Course</option>
+                <option value="MCA">MCA</option>
+                <option value="BCA">BCA</option>
+                <option value="BBA">BBA</option>
+                <option value="MBA">MBA</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            {/* Custom Course (conditional when Other is selected) */}
+            {regCourse === 'Other' && (
+              <div>
+                <label htmlFor="reg-custom-course" className="mb-1 block text-sm font-medium text-slate-700">
+                  Specify Course Name
+                </label>
+                <input
+                  id="reg-custom-course"
+                  type="text"
+                  value={regCustomCourse}
+                  onChange={(e) => setRegCustomCourse(e.target.value)}
+                  placeholder="e.g. B.Tech CS, B.Com, M.Sc"
+                  required
+                  disabled={loading}
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:bg-slate-50 disabled:text-slate-500"
+                />
+              </div>
+            )}
+
+            {/* Academic Year and Section */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="reg-year" className="mb-1 block text-sm font-medium text-slate-700">
+                  Academic Year
+                </label>
+                <select
+                  id="reg-year"
+                  value={regAcademicYear}
+                  onChange={(e) => setRegAcademicYear(e.target.value)}
+                  required
+                  disabled={loading}
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm bg-white outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:bg-slate-50 disabled:text-slate-500"
+                >
+                  <option value="" disabled>Select Year</option>
+                  <option value="1st">1st</option>
+                  <option value="2nd">2nd</option>
+                  <option value="3rd">3rd</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="reg-section" className="mb-1 block text-sm font-medium text-slate-700">
+                  Section
+                </label>
+                <input
+                  id="reg-section"
+                  type="text"
+                  value={regSection}
+                  onChange={(e) => setRegSection(e.target.value)}
+                  placeholder="e.g. A, B, 1"
+                  maxLength={10}
+                  required
+                  disabled={loading}
+                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 disabled:bg-slate-50 disabled:text-slate-500"
+                />
+              </div>
             </div>
 
             <div>

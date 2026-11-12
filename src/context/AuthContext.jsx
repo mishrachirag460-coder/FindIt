@@ -51,7 +51,7 @@ export function AuthProvider({ children }) {
       try {
         const { data, error } = await supabase
           .from('profiles')
-          .select('findit_id, full_name, member_type')
+          .select('id, findit_id, full_name, email, member_type, course, academic_year, section')
           .eq('id', userId)
           .single()
 
@@ -92,15 +92,27 @@ export function AuthProvider({ children }) {
     return data
   }
 
-  // Register student: passes fullName in options.data; NEVER sends a role
-  const signUpStudent = async (fullName, email, password) => {
+  // Register student: passes fullName and optional academic details in options.data; NEVER sends a role
+  const signUpStudent = async (fullName, email, password, academicDetails = {}) => {
+    const metadata = {
+      full_name: fullName.trim(),
+    }
+
+    if (academicDetails?.course) {
+      metadata.course = academicDetails.course.trim()
+    }
+    if (academicDetails?.academic_year) {
+      metadata.academic_year = academicDetails.academic_year.trim()
+    }
+    if (academicDetails?.section) {
+      metadata.section = academicDetails.section.trim()
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
       options: {
-        data: {
-          full_name: fullName.trim(),
-        },
+        data: metadata,
       },
     })
 
@@ -127,7 +139,7 @@ export function AuthProvider({ children }) {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('findit_id, full_name, member_type')
+        .select('id, findit_id, full_name, email, member_type, course, academic_year, section')
         .eq('id', currentId)
         .single()
 
@@ -141,6 +153,32 @@ export function AuthProvider({ children }) {
     return null
   }
 
+  // Update authenticated user's own profile fields (academic details, name)
+  const updateProfile = async (updates = {}) => {
+    const currentId = activeUserIdRef.current
+    if (!currentId) throw new Error('You must be signed in to update your profile.')
+
+    const payload = {}
+    if (updates.full_name !== undefined) payload.full_name = updates.full_name ? updates.full_name.trim() : ''
+    if (updates.course !== undefined) payload.course = updates.course ? updates.course.trim() : null
+    if (updates.academic_year !== undefined) payload.academic_year = updates.academic_year ? updates.academic_year.trim() : null
+    if (updates.section !== undefined) payload.section = updates.section ? updates.section.trim() : null
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', currentId)
+      .select('id, findit_id, full_name, email, member_type, course, academic_year, section')
+      .single()
+
+    if (error) throw error
+
+    if (activeUserIdRef.current === currentId && isMountedRef.current) {
+      setProfile(data)
+    }
+    return data
+  }
+
   const value = {
     user,
     session,
@@ -150,6 +188,7 @@ export function AuthProvider({ children }) {
     signUpStudent,
     signOut,
     refreshProfile,
+    updateProfile,
   }
 
   return (
