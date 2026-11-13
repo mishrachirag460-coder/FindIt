@@ -430,14 +430,20 @@ export default function CampusFeed({
                             </button>
                           )
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => onClaimItem(item)}
-                            className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-800 transition"
-                          >
-                            <span>🛡️</span>
-                            <span>Claim This Item</span>
-                          </button>
+                          user?.id && item.finder_id && String(user.id) === String(item.finder_id) ? (
+                            <div className="w-full text-center rounded-xl bg-blue-50 border border-blue-200 py-2.5 px-3 text-xs font-semibold text-blue-800">
+                              Reported by you • In your custody
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => onClaimItem(item)}
+                              className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-bold text-white shadow-2xs hover:bg-blue-800 transition"
+                            >
+                              <span>🛡️</span>
+                              <span>Claim This Item</span>
+                            </button>
+                          )
                         )
                       ) : (
                         <div className="w-full text-center rounded-xl bg-slate-100 py-2 text-xs font-semibold text-slate-500">

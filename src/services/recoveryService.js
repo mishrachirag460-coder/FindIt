@@ -77,9 +77,20 @@ export async function fetchMyClaims() {
 
 /**
  * Fetch incoming recovery requests for items where the current user is active custodian
+ * Excludes requests submitted by the logged-in claimant themselves
  */
-export async function fetchIncomingClaimsForCustodian() {
-  const { data, error } = await supabase
+export async function fetchIncomingClaimsForCustodian(userId = null) {
+  let effectiveUserId = userId
+  if (!effectiveUserId) {
+    try {
+      const { data: authData } = await supabase.auth.getUser()
+      effectiveUserId = authData?.user?.id || null
+    } catch {
+      effectiveUserId = null
+    }
+  }
+
+  let query = supabase
     .from('recovery_requests')
     .select(`
       id,
@@ -102,11 +113,22 @@ export async function fetchIncomingClaimsForCustodian() {
     `)
     .order('created_at', { ascending: false })
 
+  if (effectiveUserId) {
+    query = query.neq('claimant_id', effectiveUserId)
+  }
+
+  const { data, error } = await query
+
   if (error) {
     return { claims: [], error: error.message }
   }
 
-  const normalized = (data || []).map((c) => ({
+  // Defensively exclude any requests authored by the current claimant
+  const filteredData = effectiveUserId
+    ? (data || []).filter((c) => String(c.claimant_id) !== String(effectiveUserId))
+    : data || []
+
+  const normalized = filteredData.map((c) => ({
     ...c,
     item_name: c.found_reports?.item_name || `Found Item #${c.found_item_id}`,
     category: c.found_reports?.category || 'General',

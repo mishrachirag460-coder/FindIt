@@ -178,13 +178,17 @@ export default function Dashboard({
     try {
       const [claimsRes, incomingRes, reportsRes, transfersRes] = await Promise.all([
         fetchMyClaims(),
-        fetchIncomingClaimsForCustodian(),
+        fetchIncomingClaimsForCustodian(user.id),
         fetchUserReports(user.id),
         fetchUserTransfers(user.id),
       ])
 
       setMyClaims(claimsRes.claims || [])
-      setIncomingClaims(incomingRes.claims || [])
+      // Defensively ensure claimant's own recovery requests are never present in incoming claims
+      const genuineIncoming = (incomingRes.claims || []).filter(
+        (c) => !user?.id || String(c.claimant_id) !== String(user.id)
+      )
+      setIncomingClaims(genuineIncoming)
       setMyFoundItems(reportsRes.myFound || [])
       setMyLostItems(reportsRes.myLost || [])
       setTransfers(transfersRes)
@@ -1052,6 +1056,9 @@ export default function Dashboard({
                     const isApproved = s === 'ACCEPTED'
                     const isReleased = s === 'RELEASED_TO_OWNER'
                     const isRecovered = s === 'CONFIRMED_RECOVERED' || s === 'CONFIRMED_BY_OWNER'
+                    const isClaimantOfThisRequest = Boolean(
+                      user?.id && claim.claimant_id && String(claim.claimant_id) === String(user.id)
+                    )
 
                     return (
                       <div
@@ -1086,76 +1093,78 @@ export default function Dashboard({
 
                           {claim.custodian_response_note && (
                             <div className="mt-2 text-xs text-slate-500">
-                              <span className="font-semibold">Your note: </span>
+                              <span className="font-semibold">Custodian's note: </span>
                               {claim.custodian_response_note}
                             </div>
                           )}
                         </div>
 
-                        {/* Custodian Claim Review Controls */}
-                        <div className="mt-5 border-t border-slate-100 pt-3">
-                          {isPending && (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedClaim(claim)
-                                  setModalInputText('Claim approved. Please meet me on campus with student ID.')
-                                  setActiveActionModal('approve')
-                                }}
-                                className="flex-1 rounded-xl bg-blue-700 py-2 text-xs font-bold text-white shadow-2xs hover:bg-blue-800"
-                              >
-                                Approve Claim
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedClaim(claim)
-                                  setModalInputText('')
-                                  setActiveActionModal('reject')
-                                }}
-                                className="flex-1 rounded-xl border border-rose-300 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"
-                              >
-                                Reject (Cooldown)
-                              </button>
-                            </div>
-                          )}
+                        {/* Custodian Claim Review Controls - Shown only for genuine incoming claims, never for claimant's own request */}
+                        {!isClaimantOfThisRequest && (
+                          <div className="mt-5 border-t border-slate-100 pt-3">
+                            {isPending && (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedClaim(claim)
+                                    setModalInputText('Claim approved. Please meet me on campus with student ID.')
+                                    setActiveActionModal('approve')
+                                  }}
+                                  className="flex-1 rounded-xl bg-blue-700 py-2 text-xs font-bold text-white shadow-2xs hover:bg-blue-800"
+                                >
+                                  Approve Claim
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedClaim(claim)
+                                    setModalInputText('')
+                                    setActiveActionModal('reject')
+                                  }}
+                                  className="flex-1 rounded-xl border border-rose-300 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                                >
+                                  Reject (Cooldown)
+                                </button>
+                              </div>
+                            )}
 
-                          {isApproved && (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedClaim(claim)
-                                  setModalInputText('Item physically handed over to verified owner.')
-                                  setActiveActionModal('release')
-                                }}
-                                className="flex-1 rounded-xl bg-purple-700 py-2 text-xs font-bold text-white shadow-2xs hover:bg-purple-800"
-                              >
-                                Release Item to Owner
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRevokeApproval(claim.id)}
-                                className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-                              >
-                                Revoke
-                              </button>
-                            </div>
-                          )}
+                            {isApproved && (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedClaim(claim)
+                                    setModalInputText('Item physically handed over to verified owner.')
+                                    setActiveActionModal('release')
+                                  }}
+                                  className="flex-1 rounded-xl bg-purple-700 py-2 text-xs font-bold text-white shadow-2xs hover:bg-purple-800"
+                                >
+                                  Release Item to Owner
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRevokeApproval(claim.id)}
+                                  className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                                >
+                                  Revoke
+                                </button>
+                              </div>
+                            )}
 
-                          {isReleased && (
-                            <div className="text-center text-xs font-semibold text-purple-700">
-                              Item handed over. Awaiting final confirmation from owner.
-                            </div>
-                          )}
+                            {isReleased && (
+                              <div className="text-center text-xs font-semibold text-purple-700">
+                                Item handed over. Awaiting final confirmation from owner.
+                              </div>
+                            )}
 
-                          {isRecovered && (
-                            <div className="text-center text-xs font-bold text-emerald-700">
-                              ✓ Successfully recovered & confirmed by owner!
-                            </div>
-                          )}
-                        </div>
+                            {isRecovered && (
+                              <div className="text-center text-xs font-bold text-emerald-700">
+                                ✓ Successfully recovered & confirmed by owner!
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
